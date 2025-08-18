@@ -1,73 +1,84 @@
-# Welcome to your Lovable project
+# Beltway PLC Server
 
-## Project info
+## Project Overview
 
-**URL**: https://lovable.dev/projects/d4b6942c-54e6-4559-a914-ecbf42466090
+A Mock PLC (Programmable Logic Controller) Server that simulates an industrial automation system with modular sensor components. This system provides real-time monitoring and data visualization for industrial automation environments.
 
-## How can I edit this code?
+## Features
 
-There are several ways of editing your application.
+- **Modular Architecture**: Configurable PLC server with multiple industrial modules
+- **Real-time Data Simulation**: Continuous sensor data generation with configurable patterns
+- **Live Dashboard**: Real-time visualization of sensor readings and system status
+- **Historical Data Storage**: Persistent storage of all sensor readings with timestamps
+- **Multiple Sensor Types**: Temperature, Pressure, and Vibration monitoring
 
-**Use Lovable**
+## How to run this project
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/d4b6942c-54e6-4559-a914-ecbf42466090) and start prompting.
+Requirements: Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
 
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
+### Local Development Setup
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
+# Clone the repository
 git clone <YOUR_GIT_URL>
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+# Navigate to project directory
+cd beltway-plc-server
 
-# Step 3: Install the necessary dependencies.
-npm i
+# Install dependencies
+npm install
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+# Start development server
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+### Supabase Setup
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+1. Create a Supabase project at https://supabase.com
+2. Copy your project URL and anon key to `.env` file
+3. Run the database migrations in the `supabase/migrations/` folder
+4. Deploy the edge function: `supabase functions deploy plc-data-simulator`
 
-**Use GitHub Codespaces**
+## Technology Stack
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+**Frontend:**
+- React 18 with TypeScript
+- Vite for build tooling
+- shadcn/ui component library
+- Tailwind CSS for styling
+- Recharts for data visualization
 
-## What technologies are used for this project?
+**Backend:**
+- Supabase (PostgreSQL database)
+- Supabase Edge Functions (Deno runtime)
+- Real-time subscriptions
 
-This project is built with:
+## System Architecture
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+### Database Schema
+- `plc_modules`: Industrial modules (Production Line, Quality Control, etc.)
+- `sensors`: Individual sensors per module (Temperature, Pressure, Vibration)
+- `sensor_readings`: Time-series data storage
 
-## How can I deploy this project?
+### Data Simulation Patterns
+- **Sine Wave**: Smooth oscillating values for temperature sensors
+- **Noisy Sine**: Sine wave with random variations for pressure sensors  
+- **Square Wave**: Digital on/off patterns for vibration monitoring
 
-Simply open [Lovable](https://lovable.dev/projects/d4b6942c-54e6-4559-a914-ecbf42466090) and click on Share -> Publish.
+## Demo
 
-## Can I connect a custom domain to my Lovable project?
+The dashboard displays:
+- Real-time sensor readings updated every 5 seconds
+- System status indicators and connection monitoring
+- Historical data visualization with progress bars
+- Module-based organization of sensor data
 
-Yes, you can!
+## Assessment Completion
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+This implementation covers the core requirements of the Mock PLC Server assignment:
+- ✅ Modular architecture with configurable modules
+- ✅ Real-time sensor data simulation
+- ✅ Multiple data patterns (sine, noise, square)
+- ✅ Dashboard with live visualization
+- ✅ Historical data storage
+- ✅ Timestamp management and real-time updates
