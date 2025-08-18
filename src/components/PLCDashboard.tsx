@@ -31,6 +31,7 @@ import AddSensorDialog from "./AddSensorDialog";
 import ConfigurationDialog from "./ConfigurationDialog";
 import { ModuleInitializer } from "@/utils/moduleInitializer";
 import { ConfigLoader } from "@/utils/configLoader";
+import { useToast } from "@/hooks/use-toast";
 
 // Define types for database entities
 interface DatabaseModule {
@@ -87,6 +88,7 @@ const PLCDashboard: React.FC = () => {
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [isSimulationRunning, setIsSimulationRunning] = useState(false);
   const [updateLock, setUpdateLock] = useState(false);
+  const { toast } = useToast();
 
   // Retry mechanism with exponential backoff
   const retryWithBackoff = useCallback(async (fn: () => Promise<any>, maxRetries = 3) => {
@@ -533,10 +535,19 @@ const PLCDashboard: React.FC = () => {
       if (fetchModulesAndSensorsRef.current) {
         fetchModulesAndSensorsRef.current();
       }
+
+      // Show welcome notification about update interval
+      setTimeout(() => {
+        toast({
+          title: "⚡ Real-time Updates Active",
+          description: "Sensor data refreshes every 5 seconds with dynamic simulation patterns",
+          duration: 4000, // Show for 4 seconds
+        });
+      }, 500); // Small delay to ensure app is loaded
     };
 
     initializeSystem();
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
     const channel = supabase
