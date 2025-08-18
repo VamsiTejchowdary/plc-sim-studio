@@ -2,6 +2,12 @@
   "plc_server": {
     "name": "Beltway PLC Server",
     "update_interval": 5000,
+    "connection": {
+      "database_url": "https://vmojbnsdljjdnqzotmuz.supabase.co",
+      "api_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZtb2pibnNkbGpqZG5xem90bXV6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU1NDI1NzcsImV4cCI6MjA3MTExODU3N30.iJBX5qdrG3p9UxWcTkrDXxist6-Hus9AYUPE0uJ-7RQ",
+      "timeout": 30000,
+      "retry_attempts": 3
+    },
     "modules": {
       "count": 5,
       "auto_generate": true,

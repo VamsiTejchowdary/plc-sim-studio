@@ -29,11 +29,16 @@ const ConfigurationDialog: React.FC<ConfigurationDialogProps> = ({ onConfigChang
 
   const loadCurrentConfig = async () => {
     try {
+      console.log('Loading configuration...');
       const currentConfig = await ConfigLoader.loadConfig();
+      console.log('Loaded config:', currentConfig);
+      
       setConfig(currentConfig);
       setModuleCount(currentConfig.plc_server.modules.count);
       setUpdateInterval(currentConfig.plc_server.update_interval);
       setAutoGenerate(currentConfig.plc_server.modules.auto_generate);
+      
+      toast.success('Configuration loaded successfully');
     } catch (error) {
       console.error('Error loading config:', error);
       toast.error('Failed to load configuration');
@@ -43,11 +48,22 @@ const ConfigurationDialog: React.FC<ConfigurationDialogProps> = ({ onConfigChang
   const handleReinitialize = async () => {
     setLoading(true);
     try {
+      // Update the runtime configuration
+      ConfigLoader.updateRuntimeConfig({
+        moduleCount,
+        updateInterval,
+        autoGenerate
+      });
+
+      // Reset and reinitialize with new settings
       await ModuleInitializer.resetAndReinitialize();
       onConfigChanged();
       setOpen(false);
+      
+      toast.success(`Applied new settings: ${moduleCount} modules, ${updateInterval}ms interval`);
     } catch (error) {
       console.error('Error reinitializing:', error);
+      toast.error('Failed to apply configuration changes');
     } finally {
       setLoading(false);
     }
@@ -175,6 +191,16 @@ const ConfigurationDialog: React.FC<ConfigurationDialogProps> = ({ onConfigChang
                 disabled={loading}
               >
                 Cancel
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  console.log('Test button clicked');
+                  toast.success('Configuration dialog is working!');
+                }}
+                disabled={loading}
+              >
+                Test
               </Button>
               <Button
                 onClick={handleReinitialize}

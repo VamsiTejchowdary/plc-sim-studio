@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -75,6 +75,7 @@ const PLCDashboard: React.FC = () => {
   >("connecting");
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [isSimulationRunning, setIsSimulationRunning] = useState(false);
+  const [updateLock, setUpdateLock] = useState(false);
 
   // Fetch modules and sensors from Supabase
   const fetchModulesAndSensors = useCallback(async () => {
@@ -162,18 +163,45 @@ const PLCDashboard: React.FC = () => {
     }
   }, []);
 
-  // Start PLC data simulation
+
+  const updateLockRef = useRef(false);
+  const startSimulationRef = useRef<() => Promise<void>>();
+  const fetchModulesAndSensorsRef = useRef<() => Promise<void>>();
+
   const startSimulation = useCallback(async () => {
+    const timestamp = new Date().toLocaleTimeString();
+    console.log(`[${timestamp}] startSimulation called`);
+    
+    if (updateLockRef.current) {
+      console.log('Simulation already running, skipping...');
+      return;
+    }
+    
+    updateLockRef.current = true;
+    setUpdateLock(true);
+    
     try {
       setIsSimulationRunning(true);
+      
+      console.log(`[${timestamp}] Invoking plc-data-simulator function`);
       const { error } = await supabase.functions.invoke("plc-data-simulator");
       if (error) throw error;
+      
+      setLastUpdate(new Date());
+      console.log(`[${timestamp}] Simulation completed successfully`);
     } catch (error) {
       console.error("Error starting simulation:", error);
+    } finally {
+      setIsSimulationRunning(false);
+      updateLockRef.current = false;
+      setUpdateLock(false);
     }
-  }, []);
+  }, []); // No dependencies!
 
-  // Initialize modules from config and fetch data
+  // Update refs with current function references
+  startSimulationRef.current = startSimulation;
+  fetchModulesAndSensorsRef.current = fetchModulesAndSensors;
+
   useEffect(() => {
     const initializeSystem = async () => {
       await ModuleInitializer.initializeFromConfig();
@@ -183,7 +211,6 @@ const PLCDashboard: React.FC = () => {
     initializeSystem();
   }, [fetchModulesAndSensors]);
 
-  // Set up real-time subscriptions for sensor readings
   useEffect(() => {
     const channel = supabase
       .channel("sensor-readings-changes")
@@ -195,8 +222,9 @@ const PLCDashboard: React.FC = () => {
           table: "sensor_readings",
         },
         () => {
-          // Refetch data when new readings are inserted
-          fetchModulesAndSensors();
+          console.log('Real-time update detected - new sensor readings inserted');
+          // Don't immediately refetch data to avoid appearing like 1-second updates
+          // Let the timer-based interval handle the UI updates for consistent timing
         }
       )
       .subscribe();
@@ -204,28 +232,61 @@ const PLCDashboard: React.FC = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [fetchModulesAndSensors]);
+  }, []);
 
-  // Auto-generate sensor data based on config interval
+  // Auto-generate sensor data based on config interval with thread-safe operations
   useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
+    let isActive = true;
+    const effectId = Math.random().toString(36).substr(2, 9);
+
     const setupInterval = async () => {
-      const updateInterval = await ConfigLoader.getUpdateInterval();
+      try {
+        const updateInterval = await ConfigLoader.getUpdateInterval();
+        console.log(`[Effect ${effectId}] Setting up interval with ${updateInterval}ms delay`);
+        
+        if (!isActive) return; // Component unmounted during async operation
 
-      const interval = setInterval(() => {
-        startSimulation();
-      }, updateInterval);
+        intervalId = setInterval(async () => {
+          if (isActive && startSimulationRef.current && fetchModulesAndSensorsRef.current) {
+            console.log(`[Effect ${effectId}] Timer triggered - calling startSimulation()`);
+            await startSimulationRef.current();
+            // Refetch data after simulation completes to update UI with new values
+            if (isActive) {
+              console.log(`[Effect ${effectId}] Timer - refetching data after simulation`);
+              fetchModulesAndSensorsRef.current();
+            }
+          }
+        }, updateInterval);
 
-      // Start immediately
-      startSimulation();
+        console.log(`[Effect ${effectId}] Interval created with ID: ${intervalId}`);
 
-      return () => clearInterval(interval);
+        // Start immediately if component is still active
+        if (isActive && startSimulationRef.current && fetchModulesAndSensorsRef.current) {
+          console.log('Starting simulation immediately');
+          (async () => {
+            await startSimulationRef.current!();
+            if (isActive) {
+              console.log('Initial - refetching data after simulation');
+              fetchModulesAndSensorsRef.current!();
+            }
+          })();
+        }
+      } catch (error) {
+        console.error('Error setting up update interval:', error);
+      }
     };
 
-    const cleanup = setupInterval();
+    setupInterval();
+
     return () => {
-      cleanup.then((cleanupFn) => cleanupFn && cleanupFn());
+      console.log(`[Effect ${effectId}] Cleaning up interval with ID: ${intervalId}`);
+      isActive = false;
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
     };
-  }, [startSimulation]);
+  }, []); // No dependencies to prevent multiple intervals
 
   const getStatusIcon = (status: string) => {
     switch (status) {

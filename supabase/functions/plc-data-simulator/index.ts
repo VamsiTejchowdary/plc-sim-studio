@@ -21,9 +21,9 @@ interface SensorReading {
 }
 
 const generateSensorValue = (
-  pattern: string, 
-  minValue: number, 
-  maxValue: number, 
+  pattern: string,
+  minValue: number,
+  maxValue: number,
   time: number,
   patternConfig?: any
 ): number => {
@@ -40,16 +40,16 @@ const generateSensorValue = (
       // Configurable sinusoidal: amplitude * sin(frequency * time + phase_offset) + dc_offset
       const sineValue = config.amplitude * Math.sin(config.frequency * time + config.phase_offset) + config.dc_offset;
       return Math.max(minValue, Math.min(maxValue, sineValue));
-    
+
     case 'noise':
       const sineBase = config.amplitude * Math.sin(config.frequency * time + config.phase_offset) + config.dc_offset;
       const noise = (Math.random() - 0.5) * config.amplitude * 0.2;
       return Math.max(minValue, Math.min(maxValue, sineBase + noise));
-    
+
     case 'square':
       const squareValue = config.dc_offset + (Math.sin(config.frequency * time + config.phase_offset) > 0 ? config.amplitude * 0.8 : -config.amplitude * 0.2);
       return Math.max(minValue, Math.min(maxValue, squareValue));
-    
+
     default:
       return minValue + Math.random() * (maxValue - minValue);
   }
@@ -66,7 +66,8 @@ Deno.serve(async (req: Request) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    console.log('PLC Data Simulator: Starting sensor data generation');
+    const executionId = crypto.randomUUID();
+    console.log(`PLC Data Simulator [${executionId}]: Starting sensor data generation`);
 
     // Get all sensors with their simulation parameters
     const { data: sensors, error: sensorsError } = await supabase
@@ -107,7 +108,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Insert all readings at once
+    // Insert all readings at once (atomic operation for thread safety)
     const { error: insertError } = await supabase
       .from('sensor_readings')
       .insert(readings);
@@ -117,7 +118,7 @@ Deno.serve(async (req: Request) => {
       throw insertError;
     }
 
-    console.log(`PLC Data Simulator: Generated ${readings.length} sensor readings`);
+    console.log(`PLC Data Simulator [${executionId}]: Generated ${readings.length} sensor readings`);
 
     return new Response(
       JSON.stringify({
