@@ -52,6 +52,17 @@ export default {
 					DEFAULT: 'hsl(var(--card))',
 					foreground: 'hsl(var(--card-foreground))'
 				},
+				status: {
+					online: 'hsl(var(--status-online))',
+					warning: 'hsl(var(--status-warning))',
+					critical: 'hsl(var(--status-critical))',
+					offline: 'hsl(var(--status-offline))'
+				},
+				sensor: {
+					primary: 'hsl(var(--sensor-primary))',
+					secondary: 'hsl(var(--sensor-secondary))',
+					tertiary: 'hsl(var(--sensor-tertiary))'
+				},
 				sidebar: {
 					DEFAULT: 'hsl(var(--sidebar-background))',
 					foreground: 'hsl(var(--sidebar-foreground))',
@@ -84,11 +95,46 @@ export default {
 					to: {
 						height: '0'
 					}
+				},
+				'pulse-glow': {
+					'0%, 100%': {
+						opacity: '1',
+						transform: 'scale(1)'
+					},
+					'50%': {
+						opacity: '0.8',
+						transform: 'scale(1.05)'
+					}
+				},
+				'data-flow': {
+					'0%': {
+						transform: 'translateX(-100%)',
+						opacity: '0'
+					},
+					'50%': {
+						opacity: '1'
+					},
+					'100%': {
+						transform: 'translateX(100%)',
+						opacity: '0'
+					}
 				}
 			},
 			animation: {
 				'accordion-down': 'accordion-down 0.2s ease-out',
-				'accordion-up': 'accordion-up 0.2s ease-out'
+				'accordion-up': 'accordion-up 0.2s ease-out',
+				'pulse-glow': 'pulse-glow 2s ease-in-out infinite',
+				'data-flow': 'data-flow 3s linear infinite'
+			},
+			backgroundImage: {
+				'gradient-panel': 'var(--gradient-panel)',
+				'gradient-status': 'var(--gradient-status)',
+				'gradient-sensor': 'var(--gradient-sensor)'
+			},
+			boxShadow: {
+				'panel': 'var(--shadow-panel)',
+				'status': 'var(--shadow-status)',
+				'critical': 'var(--shadow-critical)'
 			}
 		}
 	},
