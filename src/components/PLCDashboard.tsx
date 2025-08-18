@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,89 +14,185 @@ import {
   Gauge,
   Zap
 } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 
-interface SensorData {
+// Define types for database entities
+interface DatabaseModule {
   id: string;
   name: string;
-  value: number;
-  unit: string;
   status: 'online' | 'warning' | 'critical' | 'offline';
-  min: number;
-  max: number;
-  pattern: 'sinusoidal' | 'noisy_sinusoidal' | 'square_wave';
+  module_type: string;
+  created_at: string;
+  updated_at: string;
 }
 
-interface ModuleData {
+interface DatabaseSensor {
+  id: string;
+  module_id: string;
+  name: string;
+  sensor_type: string;
+  unit: string;
+  min_value: number;
+  max_value: number;
+  status: 'online' | 'warning' | 'critical' | 'offline';
+  data_pattern: 'sine' | 'noise' | 'square';
+  created_at: string;
+  updated_at: string;
+}
+
+interface SensorReading {
+  id: string;
+  sensor_id: string;
+  value: number;
+  timestamp: string;
+}
+
+interface ModuleWithSensors {
   id: string;
   name: string;
   status: 'online' | 'warning' | 'critical' | 'offline';
-  sensors: SensorData[];
+  sensors: {
+    id: string;
+    name: string;
+    unit: string;
+    status: 'online' | 'warning' | 'critical' | 'offline';
+    min_value: number;
+    max_value: number;
+    data_pattern: string;
+    latest_value: number | null;
+  }[];
 }
 
 const PLCDashboard: React.FC = () => {
-  const [modules, setModules] = useState<ModuleData[]>([]);
-  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'connecting'>('connected');
+  const [modules, setModules] = useState<ModuleWithSensors[]>([]);
+  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'connecting'>('connecting');
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+  const [isSimulationRunning, setIsSimulationRunning] = useState(false);
 
-  // Simulate PLC modules with sensors
-  useEffect(() => {
-    const generateInitialData = (): ModuleData[] => {
-      return Array.from({ length: 4 }, (_, moduleIndex) => ({
-        id: `module_${moduleIndex + 1}`,
-        name: `Module ${moduleIndex + 1}`,
-        status: Math.random() > 0.1 ? 'online' : 'warning',
-        sensors: Array.from({ length: 3 }, (_, sensorIndex) => ({
-          id: `Module${moduleIndex + 1}_Sensor${sensorIndex + 1}`,
-          name: `Module${moduleIndex + 1}_Sensor${sensorIndex + 1}`,
-          value: Math.random() * 100,
-          unit: ['°C', 'bar', 'Hz'][sensorIndex],
-          status: Math.random() > 0.05 ? 'online' : 'warning',
-          min: [0, 0, 0][sensorIndex],
-          max: [150, 10, 60][sensorIndex],
-          pattern: ['sinusoidal', 'noisy_sinusoidal', 'square_wave'][sensorIndex] as any
-        }))
-      }));
-    };
+  // Fetch modules and sensors from Supabase
+  const fetchModulesAndSensors = useCallback(async () => {
+    try {
+      // Fetch modules
+      const { data: modulesData, error: modulesError } = await supabase
+        .from('plc_modules')
+        .select('*')
+        .order('name');
 
-    setModules(generateInitialData());
+      if (modulesError) throw modulesError;
+
+      // Fetch sensors with their latest readings
+      const { data: sensorsData, error: sensorsError } = await supabase
+        .from('sensors')
+        .select(`
+          id,
+          module_id,
+          name,
+          unit,
+          status,
+          min_value,
+          max_value,
+          data_pattern
+        `)
+        .order('name');
+
+      if (sensorsError) throw sensorsError;
+
+      // Fetch latest sensor readings
+      const sensorIds = sensorsData?.map(s => s.id) || [];
+      const { data: readingsData, error: readingsError } = await supabase
+        .from('sensor_readings')
+        .select('sensor_id, value, timestamp')
+        .in('sensor_id', sensorIds)
+        .order('timestamp', { ascending: false });
+
+      if (readingsError) throw readingsError;
+
+      // Get latest reading for each sensor
+      const latestReadings = new Map();
+      readingsData?.forEach(reading => {
+        if (!latestReadings.has(reading.sensor_id)) {
+          latestReadings.set(reading.sensor_id, reading);
+        }
+      });
+
+      // Combine modules with their sensors and latest readings
+      const modulesWithSensors: ModuleWithSensors[] = modulesData?.map(module => ({
+        id: module.id,
+        name: module.name,
+        status: module.status as 'online' | 'warning' | 'critical' | 'offline',
+        sensors: sensorsData
+          ?.filter(sensor => sensor.module_id === module.id)
+          .map(sensor => ({
+            id: sensor.id,
+            name: sensor.name,
+            unit: sensor.unit,
+            status: sensor.status as 'online' | 'warning' | 'critical' | 'offline',
+            min_value: sensor.min_value,
+            max_value: sensor.max_value,
+            data_pattern: sensor.data_pattern,
+            latest_value: latestReadings.get(sensor.id)?.value || null
+          })) || []
+      })) || [];
+
+      setModules(modulesWithSensors);
+      setConnectionStatus('connected');
+      setLastUpdate(new Date());
+    } catch (error) {
+      console.error('Error fetching data:', error);
+      setConnectionStatus('disconnected');
+    }
   }, []);
 
-  // Simulate real-time updates
+  // Start PLC data simulation
+  const startSimulation = useCallback(async () => {
+    try {
+      setIsSimulationRunning(true);
+      const { error } = await supabase.functions.invoke('plc-data-simulator');
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error starting simulation:', error);
+    }
+  }, []);
+
+  // Initial data fetch
+  useEffect(() => {
+    fetchModulesAndSensors();
+  }, [fetchModulesAndSensors]);
+
+  // Set up real-time subscriptions for sensor readings
+  useEffect(() => {
+    const channel = supabase
+      .channel('sensor-readings-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'sensor_readings'
+        },
+        () => {
+          // Refetch data when new readings are inserted
+          fetchModulesAndSensors();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchModulesAndSensors]);
+
+  // Auto-generate sensor data every 5 seconds
   useEffect(() => {
     const interval = setInterval(() => {
-      setModules(prevModules => 
-        prevModules.map(module => ({
-          ...module,
-          sensors: module.sensors.map(sensor => {
-            let newValue;
-            const time = Date.now() / 1000;
-            
-            switch (sensor.pattern) {
-              case 'sinusoidal':
-                newValue = 50 + 30 * Math.sin(time * 0.5 + Math.random() * 0.1);
-                break;
-              case 'noisy_sinusoidal':
-                newValue = 50 + 30 * Math.sin(time * 0.3) + (Math.random() - 0.5) * 10;
-                break;
-              case 'square_wave':
-                newValue = Math.sin(time * 0.4) > 0 ? 80 : 20;
-                break;
-              default:
-                newValue = sensor.value;
-            }
+      startSimulation();
+    }, 5000);
 
-            return {
-              ...sensor,
-              value: Math.max(sensor.min, Math.min(sensor.max, newValue))
-            };
-          })
-        }))
-      );
-      setLastUpdate(new Date());
-    }, 1000);
+    // Start immediately
+    startSimulation();
 
     return () => clearInterval(interval);
-  }, []);
+  }, [startSimulation]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -109,7 +205,7 @@ const PLCDashboard: React.FC = () => {
 
   const getSensorIcon = (index: number) => {
     const icons = [Thermometer, Gauge, Zap];
-    const Icon = icons[index];
+    const Icon = icons[index % icons.length];
     return <Icon className="h-4 w-4" />;
   };
 
@@ -122,6 +218,14 @@ const PLCDashboard: React.FC = () => {
     }
   };
 
+  const totalSensors = modules.reduce((acc, module) => acc + module.sensors.length, 0);
+  const onlineSensors = modules.reduce((acc, module) => 
+    acc + module.sensors.filter(s => s.status === 'online').length, 0
+  );
+  const warningSensors = modules.reduce((acc, module) => 
+    acc + module.sensors.filter(s => s.status === 'warning').length, 0
+  );
+
   return (
     <div className="min-h-screen bg-background p-6">
       {/* Header */}
@@ -129,7 +233,7 @@ const PLCDashboard: React.FC = () => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Beltway PLC Server</h1>
-            <p className="text-muted-foreground">Industrial Automation Control System</p>
+            <p className="text-muted-foreground">Industrial Automation Control System - Real-time Data</p>
           </div>
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2">
@@ -163,9 +267,7 @@ const PLCDashboard: React.FC = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-status-online">
-              {modules.reduce((acc, module) => 
-                acc + module.sensors.filter(s => s.status === 'online').length, 0
-              )}
+              {onlineSensors}
             </div>
           </CardContent>
         </Card>
@@ -176,9 +278,7 @@ const PLCDashboard: React.FC = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-status-warning">
-              {modules.reduce((acc, module) => 
-                acc + module.sensors.filter(s => s.status === 'warning').length, 0
-              )}
+              {warningSensors}
             </div>
           </CardContent>
         </Card>
@@ -226,31 +326,38 @@ const PLCDashboard: React.FC = () => {
                     
                     <div className="flex items-center justify-between">
                       <div className="text-lg font-mono">
-                        {sensor.value.toFixed(2)} {sensor.unit}
+                        {sensor.latest_value !== null 
+                          ? `${sensor.latest_value.toFixed(2)} ${sensor.unit}`
+                          : `-- ${sensor.unit}`
+                        }
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {sensor.pattern}
+                        {sensor.data_pattern}
                       </div>
                     </div>
                     
                     {/* Value Bar */}
-                    <div className="w-full bg-muted rounded-full h-2">
-                      <div 
-                        className={`h-2 rounded-full transition-all duration-300 ${
-                          sensor.status === 'online' ? 'bg-gradient-sensor' :
-                          sensor.status === 'warning' ? 'bg-status-warning' :
-                          'bg-status-critical'
-                        }`}
-                        style={{ 
-                          width: `${((sensor.value - sensor.min) / (sensor.max - sensor.min)) * 100}%` 
-                        }}
-                      />
-                    </div>
-                    
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>{sensor.min} {sensor.unit}</span>
-                      <span>{sensor.max} {sensor.unit}</span>
-                    </div>
+                    {sensor.latest_value !== null && (
+                      <>
+                        <div className="w-full bg-muted rounded-full h-2">
+                          <div 
+                            className={`h-2 rounded-full transition-all duration-300 ${
+                              sensor.status === 'online' ? 'bg-gradient-sensor' :
+                              sensor.status === 'warning' ? 'bg-status-warning' :
+                              'bg-status-critical'
+                            }`}
+                            style={{ 
+                              width: `${Math.max(0, Math.min(100, ((sensor.latest_value - sensor.min_value) / (sensor.max_value - sensor.min_value)) * 100))}%` 
+                            }}
+                          />
+                        </div>
+                        
+                        <div className="flex justify-between text-xs text-muted-foreground">
+                          <span>{sensor.min_value} {sensor.unit}</span>
+                          <span>{sensor.max_value} {sensor.unit}</span>
+                        </div>
+                      </>
+                    )}
                     
                     {index < module.sensors.length - 1 && <Separator />}
                   </div>
@@ -267,7 +374,9 @@ const PLCDashboard: React.FC = () => {
           <CardContent className="p-3">
             <div className="flex items-center space-x-2">
               <Activity className="h-4 w-4 text-status-online animate-pulse-glow" />
-              <span className="text-sm font-medium">Real-time Active</span>
+              <span className="text-sm font-medium">
+                {connectionStatus === 'connected' ? 'Real-time Active' : 'Connecting...'}
+              </span>
             </div>
           </CardContent>
         </Card>

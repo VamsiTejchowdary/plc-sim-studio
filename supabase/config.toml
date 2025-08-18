@@ -1,1 +1,4 @@
 project_id = "vmojbnsdljjdnqzotmuz"
+
+[functions.plc-data-simulator]
+verify_jwt = false
