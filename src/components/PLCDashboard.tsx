@@ -77,45 +77,93 @@ const PLCDashboard: React.FC = () => {
   const [isSimulationRunning, setIsSimulationRunning] = useState(false);
   const [updateLock, setUpdateLock] = useState(false);
 
+  // Retry mechanism with exponential backoff
+  const retryWithBackoff = useCallback(async (fn: () => Promise<any>, maxRetries = 3) => {
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        return await fn();
+      } catch (error) {
+        const delay = Math.pow(2, i) * 1000; // 1s, 2s, 4s
+        console.warn(`⚠️ Attempt ${i + 1} failed, retrying in ${delay}ms...`, error);
+        
+        if (i === maxRetries - 1) throw error; // Last attempt, throw error
+        
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }, []);
+
+  // Stable ref for retry function to avoid useEffect dependencies issues
+  const retryWithBackoffRef = useRef(retryWithBackoff);
+  retryWithBackoffRef.current = retryWithBackoff;
+
   // Fetch modules and sensors from Supabase
   const fetchModulesAndSensors = useCallback(async () => {
     try {
-      // Fetch modules
-      const { data: modulesData, error: modulesError } = await supabase
-        .from("plc_modules")
-        .select("*")
-        .order("name");
+      console.log('🔄 Fetching modules and sensors data...');
+      
+      // Fetch modules with retry
+      const modulesData = await retryWithBackoffRef.current(async () => {
+        const { data, error } = await supabase
+          .from("plc_modules")
+          .select("*")
+          .order("name");
 
-      if (modulesError) throw modulesError;
+        if (error) {
+          console.error('❌ Error fetching modules:', error);
+          throw error;
+        }
+        return data;
+      });
+      
+      console.log('✅ Modules fetched successfully:', modulesData?.length, 'modules');
 
-      // Fetch sensors with their latest readings
-      const { data: sensorsData, error: sensorsError } = await supabase
-        .from("sensors")
-        .select(
+      // Fetch sensors with their latest readings using retry
+      const sensorsData = await retryWithBackoffRef.current(async () => {
+        const { data, error } = await supabase
+          .from("sensors")
+          .select(
+            `
+            id,
+            module_id,
+            name,
+            unit,
+            status,
+            min_value,
+            max_value,
+            data_pattern
           `
-          id,
-          module_id,
-          name,
-          unit,
-          status,
-          min_value,
-          max_value,
-          data_pattern
-        `
-        )
-        .order("name");
+          )
+          .order("name");
 
-      if (sensorsError) throw sensorsError;
+        if (error) {
+          console.error('❌ Error fetching sensors:', error);
+          throw error;
+        }
+        return data;
+      });
+      
+      console.log('✅ Sensors fetched successfully:', sensorsData?.length, 'sensors');
 
-      // Fetch latest sensor readings
+      // Fetch latest sensor readings with retry
       const sensorIds = sensorsData?.map((s) => s.id) || [];
-      const { data: readingsData, error: readingsError } = await supabase
-        .from("sensor_readings")
-        .select("sensor_id, value, timestamp")
-        .in("sensor_id", sensorIds)
-        .order("timestamp", { ascending: false });
+      console.log('🔍 Fetching readings for', sensorIds.length, 'sensors');
+      
+      const readingsData = await retryWithBackoffRef.current(async () => {
+        const { data, error } = await supabase
+          .from("sensor_readings")
+          .select("sensor_id, value, timestamp")
+          .in("sensor_id", sensorIds)
+          .order("timestamp", { ascending: false });
 
-      if (readingsError) throw readingsError;
+        if (error) {
+          console.error('❌ Error fetching sensor readings:', error);
+          throw error;
+        }
+        return data;
+      });
+      
+      console.log('✅ Sensor readings fetched successfully:', readingsData?.length, 'readings');
 
       // Get latest reading for each sensor
       const latestReadings = new Map();
@@ -157,8 +205,15 @@ const PLCDashboard: React.FC = () => {
       setModules(modulesWithSensors);
       setConnectionStatus("connected");
       setLastUpdate(new Date());
+      console.log('✅ Data fetch completed successfully at', new Date().toLocaleTimeString());
     } catch (error) {
-      console.error("Error fetching data:", error);
+      console.error("❌ Critical error fetching data:", error);
+      console.error("Error details:", {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      });
       setConnectionStatus("disconnected");
     }
   }, []);
@@ -167,6 +222,108 @@ const PLCDashboard: React.FC = () => {
   const updateLockRef = useRef(false);
   const startSimulationRef = useRef<() => Promise<void>>();
   const fetchModulesAndSensorsRef = useRef<() => Promise<void>>();
+
+  // Test Supabase connectivity
+  const testSupabaseConnection = useCallback(async () => {
+    try {
+      console.log('🔗 Testing Supabase connectivity...');
+      const result = await retryWithBackoffRef.current(async () => {
+        const { data, error } = await supabase
+          .from("plc_modules")
+          .select("count", { count: "exact", head: true });
+        
+        if (error) throw error;
+        return data;
+      });
+      
+      console.log('✅ Supabase connectivity test passed, module count:', result);
+      return true;
+    } catch (error) {
+      console.error('❌ Supabase connectivity test failed after retries:', error);
+      return false;
+    }
+  }, []);
+
+  // Fallback function to generate data directly in frontend
+  const generateDataFallback = useCallback(async () => {
+    console.log('🔄 Using fallback data generation...');
+    
+    try {
+      // Get all online sensors (without pattern_config column that may not exist)
+      const { data: sensors, error: sensorsError } = await supabase
+        .from('sensors')
+        .select('id, data_pattern, min_value, max_value')
+        .eq('status', 'online');
+
+      if (sensorsError) throw sensorsError;
+      if (!sensors || sensors.length === 0) {
+        console.log('No online sensors found for fallback');
+        return;
+      }
+
+      const currentTime = Date.now();
+      const readings = [];
+
+      // Generate sensor readings
+      for (const sensor of sensors) {
+        // Use sensor-specific config based on min/max values
+        const range = sensor.max_value - sensor.min_value;
+        const midpoint = sensor.min_value + (range / 2);
+        const config = {
+          amplitude: range * 0.3, // 30% of range as amplitude
+          frequency: 0.001,
+          phase_offset: 0,
+          dc_offset: midpoint // Center the wave around midpoint
+        };
+
+        let value;
+        switch (sensor.data_pattern) {
+          case 'sine':
+            value = config.amplitude * Math.sin(config.frequency * currentTime + config.phase_offset) + config.dc_offset;
+            break;
+          case 'noise':
+            const sineBase = config.amplitude * Math.sin(config.frequency * currentTime + config.phase_offset) + config.dc_offset;
+            const noise = (Math.random() - 0.5) * config.amplitude * 0.2;
+            value = sineBase + noise;
+            break;
+          case 'square':
+            value = config.dc_offset + (Math.sin(config.frequency * currentTime + config.phase_offset) > 0 ? config.amplitude * 0.8 : -config.amplitude * 0.2);
+            break;
+          default:
+            value = sensor.min_value + Math.random() * (sensor.max_value - sensor.min_value);
+        }
+
+        // Clamp to min/max
+        const originalValue = value;
+        value = Math.max(sensor.min_value, Math.min(sensor.max_value, value));
+        value = Math.round(value * 100) / 100; // Round to 2 decimal places
+
+        // Debug logging for pressure sensors
+        if (sensor.data_pattern === 'noise') {
+          console.log(`🔧 Pressure sensor debug: original=${originalValue.toFixed(2)}, clamped=${value}, range=[${sensor.min_value}-${sensor.max_value}], config=`, config);
+        }
+
+        readings.push({
+          sensor_id: sensor.id,
+          value,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      // Insert readings directly
+      const { error: insertError } = await supabase
+        .from('sensor_readings')
+        .insert(readings);
+
+      if (insertError) throw insertError;
+
+      console.log(`✅ Fallback generated ${readings.length} sensor readings`);
+      return { readings: readings.length };
+    } catch (error) {
+      console.error('❌ Fallback data generation failed:', error);
+      throw error;
+    }
+  }, []);
 
   const startSimulation = useCallback(async () => {
     const timestamp = new Date().toLocaleTimeString();
@@ -183,12 +340,34 @@ const PLCDashboard: React.FC = () => {
     try {
       setIsSimulationRunning(true);
       
-      console.log(`[${timestamp}] Invoking plc-data-simulator function`);
-      const { error } = await supabase.functions.invoke("plc-data-simulator");
-      if (error) throw error;
+      console.log(`[${timestamp}] 🚀 Invoking plc-data-simulator function`);
+      
+      let result;
+      try {
+        // Try edge function first
+        const { data, error } = await supabase.functions.invoke("plc-data-simulator");
+        
+        if (error) {
+          console.error(`[${timestamp}] ❌ Simulation function error:`, error);
+          console.error(`[${timestamp}] Error details:`, {
+            message: error.message,
+            status: error.status,
+            statusText: error.statusText,
+            name: error.name,
+            context: error.context
+          });
+          throw error;
+        }
+        
+        result = data;
+        console.log(`[${timestamp}] ✅ Edge function succeeded:`, result);
+      } catch (edgeFunctionError) {
+        console.warn(`[${timestamp}] 🔧 Edge function failed, using fallback data generation`);
+        result = await generateDataFallback();
+      }
       
       setLastUpdate(new Date());
-      console.log(`[${timestamp}] Simulation completed successfully`);
+      console.log(`[${timestamp}] ✅ Simulation completed successfully:`, result);
     } catch (error) {
       console.error("Error starting simulation:", error);
     } finally {
@@ -196,7 +375,7 @@ const PLCDashboard: React.FC = () => {
       updateLockRef.current = false;
       setUpdateLock(false);
     }
-  }, []); // No dependencies!
+  }, [generateDataFallback]);
 
   // Update refs with current function references
   startSimulationRef.current = startSimulation;
@@ -205,11 +384,13 @@ const PLCDashboard: React.FC = () => {
   useEffect(() => {
     const initializeSystem = async () => {
       await ModuleInitializer.initializeFromConfig();
-      fetchModulesAndSensors();
+      if (fetchModulesAndSensorsRef.current) {
+        fetchModulesAndSensorsRef.current();
+      }
     };
 
     initializeSystem();
-  }, [fetchModulesAndSensors]);
+  }, []);
 
   useEffect(() => {
     const channel = supabase
@@ -247,31 +428,43 @@ const PLCDashboard: React.FC = () => {
         
         if (!isActive) return; // Component unmounted during async operation
 
-        intervalId = setInterval(async () => {
-          if (isActive && startSimulationRef.current && fetchModulesAndSensorsRef.current) {
-            console.log(`[Effect ${effectId}] Timer triggered - calling startSimulation()`);
-            await startSimulationRef.current();
-            // Refetch data after simulation completes to update UI with new values
-            if (isActive) {
-              console.log(`[Effect ${effectId}] Timer - refetching data after simulation`);
-              fetchModulesAndSensorsRef.current();
+        // Wait a bit to ensure refs are set
+        setTimeout(() => {
+          if (!isActive) return;
+          
+          intervalId = setInterval(async () => {
+            if (isActive && startSimulationRef.current && fetchModulesAndSensorsRef.current) {
+              console.log(`[Effect ${effectId}] Timer triggered - calling startSimulation()`);
+              await startSimulationRef.current();
+              // Refetch data after simulation completes to update UI with new values
+              if (isActive) {
+                console.log(`[Effect ${effectId}] Timer - refetching data after simulation`);
+                fetchModulesAndSensorsRef.current();
+              }
+            } else {
+              console.warn(`[Effect ${effectId}] Timer triggered but refs not available`);
             }
+          }, updateInterval);
+
+          console.log(`[Effect ${effectId}] Interval created with ID: ${intervalId}`);
+
+          // Start immediately if refs are available
+          if (startSimulationRef.current && fetchModulesAndSensorsRef.current) {
+            console.log(`[Effect ${effectId}] Starting simulation immediately`);
+            (async () => {
+              if (startSimulationRef.current) {
+                await startSimulationRef.current();
+                if (isActive && fetchModulesAndSensorsRef.current) {
+                  console.log(`[Effect ${effectId}] Initial - refetching data after simulation`);
+                  fetchModulesAndSensorsRef.current();
+                }
+              }
+            })();
+          } else {
+            console.warn(`[Effect ${effectId}] Cannot start immediately - refs not available`);
           }
-        }, updateInterval);
-
-        console.log(`[Effect ${effectId}] Interval created with ID: ${intervalId}`);
-
-        // Start immediately if component is still active
-        if (isActive && startSimulationRef.current && fetchModulesAndSensorsRef.current) {
-          console.log('Starting simulation immediately');
-          (async () => {
-            await startSimulationRef.current!();
-            if (isActive) {
-              console.log('Initial - refetching data after simulation');
-              fetchModulesAndSensorsRef.current!();
-            }
-          })();
-        }
+        }, 100); // Small delay to ensure refs are set
+        
       } catch (error) {
         console.error('Error setting up update interval:', error);
       }
@@ -363,8 +556,32 @@ const PLCDashboard: React.FC = () => {
                 {connectionStatus.toUpperCase()}
               </Badge>
             </div>
+            {/* <Button
+              variant="outline"
+              size="sm"
+              onClick={testSupabaseConnection}
+              className="text-xs"
+            >
+              Test Connection
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchModulesAndSensors}
+              className="text-xs"
+            >
+              Refresh Data
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={startSimulation}
+              className="text-xs"
+            >
+              Run Simulation
+            </Button> */}
             <AddModuleDialog onModuleAdded={fetchModulesAndSensors} />
-            <ConfigurationDialog onConfigChanged={fetchModulesAndSensors} />
+            {/* <ConfigurationDialog onConfigChanged={fetchModulesAndSensors} /> */}
           </div>
         </div>
         <Separator className="mt-4" />

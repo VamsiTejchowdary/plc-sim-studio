@@ -27,12 +27,14 @@ const generateSensorValue = (
   time: number,
   patternConfig?: any
 ): number => {
-  // Default pattern configuration
+  // Use sensor-specific config if pattern_config not provided
+  const range = maxValue - minValue;
+  const midpoint = minValue + (range / 2);
   const config = patternConfig || {
-    amplitude: 50,
+    amplitude: range * 0.3, // 30% of range as amplitude
     frequency: 0.001,
     phase_offset: 0,
-    dc_offset: 50
+    dc_offset: midpoint // Center the wave around midpoint
   };
 
   switch (pattern) {
@@ -69,11 +71,23 @@ Deno.serve(async (req: Request) => {
     const executionId = crypto.randomUUID();
     console.log(`PLC Data Simulator [${executionId}]: Starting sensor data generation`);
 
-    // Get all sensors with their simulation parameters
-    const { data: sensors, error: sensorsError } = await supabase
-      .from('sensors')
-      .select('id, data_pattern, min_value, max_value, pattern_config')
-      .eq('status', 'online');
+    let sensors, sensorsError;
+    try {
+      const result = await supabase
+        .from('sensors')
+        .select('id, data_pattern, min_value, max_value, pattern_config')
+        .eq('status', 'online');
+      sensors = result.data;
+      sensorsError = result.error;
+    } catch (error) {
+      console.log('pattern_config column not found, using fallback query');
+      const result = await supabase
+        .from('sensors')
+        .select('id, data_pattern, min_value, max_value')
+        .eq('status', 'online');
+      sensors = result.data;
+      sensorsError = result.error;
+    }
 
     if (sensorsError) {
       console.error('Error fetching sensors:', sensorsError);
@@ -101,9 +115,16 @@ Deno.serve(async (req: Request) => {
         sensor.pattern_config
       );
 
+      const finalValue = Math.round(value * 100) / 100; // Round to 2 decimal places
+      
+      // Debug logging for pressure sensors (noise pattern)
+      if (sensor.data_pattern === 'noise') {
+        console.log(`🔧 Edge function pressure sensor: value=${finalValue}, range=[${sensor.min_value}-${sensor.max_value}]`);
+      }
+      
       readings.push({
         sensor_id: sensor.id,
-        value: Math.round(value * 100) / 100, // Round to 2 decimal places
+        value: finalValue,
         timestamp: new Date().toISOString()
       });
     }
