@@ -281,9 +281,9 @@ const PLCDashboard: React.FC = () => {
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <img
-              src="/beltways.svg"
+              src="/Beltways_Favicon.jpg"
               alt="Beltways Logo"
-              className="h-8 w-auto"
+              className="h-8 w-8 rounded object-contain"
             />
             <div>
               <h1 className="text-3xl font-bold text-foreground">PLC Server</h1>
