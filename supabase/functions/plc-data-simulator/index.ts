@@ -1,35 +1,61 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.55.0'
+// @ts-ignore - Deno runtime supports URL imports
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+// Deno global types for IDE
+declare global {
+  const Deno: {
+    serve: (handler: (req: Request) => Promise<Response>) => void;
+    env: { get: (key: string) => string | undefined };
+  };
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-interface SensorSimulationData {
+interface SensorReading {
   sensor_id: string;
-  data_pattern: string;
-  min_value: number;
-  max_value: number;
+  value: number;
+  timestamp: string;
 }
 
-const generateSensorValue = (pattern: string, minValue: number, maxValue: number, time: number): number => {
-  const range = maxValue - minValue;
-  
+const generateSensorValue = (
+  pattern: string, 
+  minValue: number, 
+  maxValue: number, 
+  time: number,
+  patternConfig?: any
+): number => {
+  // Default pattern configuration
+  const config = patternConfig || {
+    amplitude: 50,
+    frequency: 0.001,
+    phase_offset: 0,
+    dc_offset: 50
+  };
+
   switch (pattern) {
     case 'sine':
-      return minValue + (range / 2) * (1 + Math.sin(time / 1000));
+      // Configurable sinusoidal: amplitude * sin(frequency * time + phase_offset) + dc_offset
+      const sineValue = config.amplitude * Math.sin(config.frequency * time + config.phase_offset) + config.dc_offset;
+      return Math.max(minValue, Math.min(maxValue, sineValue));
+    
     case 'noise':
-      const sineBase = minValue + (range / 2) * (1 + Math.sin(time / 1000));
-      const noise = (Math.random() - 0.5) * range * 0.2;
+      const sineBase = config.amplitude * Math.sin(config.frequency * time + config.phase_offset) + config.dc_offset;
+      const noise = (Math.random() - 0.5) * config.amplitude * 0.2;
       return Math.max(minValue, Math.min(maxValue, sineBase + noise));
+    
     case 'square':
-      return minValue + range * (Math.sin(time / 2000) > 0 ? 0.8 : 0.2);
+      const squareValue = config.dc_offset + (Math.sin(config.frequency * time + config.phase_offset) > 0 ? config.amplitude * 0.8 : -config.amplitude * 0.2);
+      return Math.max(minValue, Math.min(maxValue, squareValue));
+    
     default:
-      return minValue + Math.random() * range;
+      return minValue + Math.random() * (maxValue - minValue);
   }
 };
 
-Deno.serve(async (req) => {
+Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -45,7 +71,7 @@ Deno.serve(async (req) => {
     // Get all sensors with their simulation parameters
     const { data: sensors, error: sensorsError } = await supabase
       .from('sensors')
-      .select('id, data_pattern, min_value, max_value')
+      .select('id, data_pattern, min_value, max_value, pattern_config')
       .eq('status', 'online');
 
     if (sensorsError) {
@@ -62,7 +88,7 @@ Deno.serve(async (req) => {
     }
 
     const currentTime = Date.now();
-    const readings = [];
+    const readings: SensorReading[] = [];
 
     // Generate sensor readings for all sensors
     for (const sensor of sensors) {
@@ -70,7 +96,8 @@ Deno.serve(async (req) => {
         sensor.data_pattern,
         Number(sensor.min_value),
         Number(sensor.max_value),
-        currentTime
+        currentTime,
+        sensor.pattern_config
       );
 
       readings.push({
@@ -93,7 +120,7 @@ Deno.serve(async (req) => {
     console.log(`PLC Data Simulator: Generated ${readings.length} sensor readings`);
 
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         message: `Generated ${readings.length} sensor readings`,
         readings: readings.length
       }),
@@ -104,7 +131,7 @@ Deno.serve(async (req) => {
     console.error('PLC Data Simulator Error:', error);
     return new Response(
       JSON.stringify({ error: error.message }),
-      { 
+      {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }

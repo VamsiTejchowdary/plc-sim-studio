@@ -1,0 +1,116 @@
+{
+  "plc_server": {
+    "name": "Beltway PLC Server",
+    "update_interval": 5000,
+    "modules": {
+      "count": 5,
+      "auto_generate": true,
+      "templates": [
+        {
+          "name": "Production Line {index}",
+          "type": "production",
+          "status": "online",
+          "sensors": [
+            {
+              "name": "Module{index}_Sensor1",
+              "type": "temperature",
+              "unit": "°C",
+              "min_value": 20,
+              "max_value": 80,
+              "data_pattern": "sine",
+              "status": "online",
+              "pattern_config": {
+                "amplitude": 30,
+                "frequency": 0.001,
+                "phase_offset": 0,
+                "dc_offset": 50
+              }
+            },
+            {
+              "name": "Module{index}_Sensor2",
+              "type": "pressure", 
+              "unit": "bar",
+              "min_value": 0,
+              "max_value": 10,
+              "data_pattern": "sine",
+              "status": "online",
+              "pattern_config": {
+                "amplitude": 5,
+                "frequency": 0.002,
+                "phase_offset": 1.57,
+                "dc_offset": 5
+              }
+            },
+            {
+              "name": "Module{index}_Sensor3",
+              "type": "vibration",
+              "unit": "Hz",
+              "min_value": 0,
+              "max_value": 50,
+              "data_pattern": "sine",
+              "status": "online",
+              "pattern_config": {
+                "amplitude": 25,
+                "frequency": 0.003,
+                "phase_offset": 3.14,
+                "dc_offset": 25
+              }
+            }
+          ]
+        },
+        {
+          "name": "Quality Control {index}",
+          "type": "quality",
+          "status": "online",
+          "sensors": [
+            {
+              "name": "Module{index}_Sensor1",
+              "type": "pressure",
+              "unit": "mm",
+              "min_value": 0,
+              "max_value": 5,
+              "data_pattern": "sine",
+              "status": "online",
+              "pattern_config": {
+                "amplitude": 2.5,
+                "frequency": 0.0015,
+                "phase_offset": 0.5,
+                "dc_offset": 2.5
+              }
+            },
+            {
+              "name": "Module{index}_Sensor2",
+              "type": "flow",
+              "unit": "L/min",
+              "min_value": 0,
+              "max_value": 100,
+              "data_pattern": "sine",
+              "status": "online",
+              "pattern_config": {
+                "amplitude": 50,
+                "frequency": 0.0025,
+                "phase_offset": 2.1,
+                "dc_offset": 50
+              }
+            },
+            {
+              "name": "Module{index}_Sensor3",
+              "type": "voltage",
+              "unit": "V",
+              "min_value": 0,
+              "max_value": 24,
+              "data_pattern": "sine",
+              "status": "online",
+              "pattern_config": {
+                "amplitude": 12,
+                "frequency": 0.004,
+                "phase_offset": 4.7,
+                "dc_offset": 12
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

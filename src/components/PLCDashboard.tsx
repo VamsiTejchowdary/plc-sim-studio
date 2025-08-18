@@ -15,6 +15,11 @@ import {
   Zap,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import AddModuleDialog from "./AddModuleDialog";
+import AddSensorDialog from "./AddSensorDialog";
+import ConfigurationDialog from "./ConfigurationDialog";
+import { ModuleInitializer } from "@/utils/moduleInitializer";
+import { ConfigLoader } from "@/utils/configLoader";
 
 // Define types for database entities
 interface DatabaseModule {
@@ -168,9 +173,14 @@ const PLCDashboard: React.FC = () => {
     }
   }, []);
 
-  // Initial data fetch
+  // Initialize modules from config and fetch data
   useEffect(() => {
-    fetchModulesAndSensors();
+    const initializeSystem = async () => {
+      await ModuleInitializer.initializeFromConfig();
+      fetchModulesAndSensors();
+    };
+
+    initializeSystem();
   }, [fetchModulesAndSensors]);
 
   // Set up real-time subscriptions for sensor readings
@@ -196,16 +206,25 @@ const PLCDashboard: React.FC = () => {
     };
   }, [fetchModulesAndSensors]);
 
-  // Auto-generate sensor data every 5 seconds
+  // Auto-generate sensor data based on config interval
   useEffect(() => {
-    const interval = setInterval(() => {
+    const setupInterval = async () => {
+      const updateInterval = await ConfigLoader.getUpdateInterval();
+
+      const interval = setInterval(() => {
+        startSimulation();
+      }, updateInterval);
+
+      // Start immediately
       startSimulation();
-    }, 5000);
 
-    // Start immediately
-    startSimulation();
+      return () => clearInterval(interval);
+    };
 
-    return () => clearInterval(interval);
+    const cleanup = setupInterval();
+    return () => {
+      cleanup.then((cleanupFn) => cleanupFn && cleanupFn());
+    };
   }, [startSimulation]);
 
   const getStatusIcon = (status: string) => {
@@ -261,15 +280,13 @@ const PLCDashboard: React.FC = () => {
       <div className="mb-8">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            <img 
-              src="/beltways.svg" 
-              alt="Beltways Logo" 
+            <img
+              src="/beltways.svg"
+              alt="Beltways Logo"
               className="h-8 w-auto"
             />
             <div>
-              <h1 className="text-3xl font-bold text-foreground">
-                PLC Server
-              </h1>
+              <h1 className="text-3xl font-bold text-foreground">PLC Server</h1>
               <p className="text-muted-foreground">
                 Industrial Automation Control System - Real-time Data
               </p>
@@ -285,9 +302,8 @@ const PLCDashboard: React.FC = () => {
                 {connectionStatus.toUpperCase()}
               </Badge>
             </div>
-            <Button variant="outline" size="icon">
-              <Settings className="h-4 w-4" />
-            </Button>
+            <AddModuleDialog onModuleAdded={fetchModulesAndSensors} />
+            <ConfigurationDialog onConfigChanged={fetchModulesAndSensors} />
           </div>
         </div>
         <Separator className="mt-4" />
@@ -361,9 +377,16 @@ const PLCDashboard: React.FC = () => {
                   {getStatusIcon(module.status)}
                   <span>{module.name}</span>
                 </CardTitle>
-                <Badge variant={getStatusBadgeVariant(module.status)}>
-                  {module.status}
-                </Badge>
+                <div className="flex items-center space-x-2">
+                  <AddSensorDialog
+                    moduleId={module.id}
+                    moduleName={module.name}
+                    onSensorAdded={fetchModulesAndSensors}
+                  />
+                  <Badge variant={getStatusBadgeVariant(module.status)}>
+                    {module.status}
+                  </Badge>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
