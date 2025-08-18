@@ -14,7 +14,112 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      plc_modules: {
+        Row: {
+          created_at: string
+          id: string
+          module_type: string
+          name: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          module_type?: string
+          name: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          module_type?: string
+          name?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      sensor_readings: {
+        Row: {
+          id: string
+          sensor_id: string
+          timestamp: string
+          value: number
+        }
+        Insert: {
+          id?: string
+          sensor_id: string
+          timestamp?: string
+          value: number
+        }
+        Update: {
+          id?: string
+          sensor_id?: string
+          timestamp?: string
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sensor_readings_sensor_id_fkey"
+            columns: ["sensor_id"]
+            isOneToOne: false
+            referencedRelation: "sensors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sensors: {
+        Row: {
+          created_at: string
+          data_pattern: string
+          id: string
+          max_value: number | null
+          min_value: number | null
+          module_id: string
+          name: string
+          sensor_type: string
+          status: string
+          unit: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          data_pattern?: string
+          id?: string
+          max_value?: number | null
+          min_value?: number | null
+          module_id: string
+          name: string
+          sensor_type?: string
+          status?: string
+          unit?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          data_pattern?: string
+          id?: string
+          max_value?: number | null
+          min_value?: number | null
+          module_id?: string
+          name?: string
+          sensor_type?: string
+          status?: string
+          unit?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sensors_module_id_fkey"
+            columns: ["module_id"]
+            isOneToOne: false
+            referencedRelation: "plc_modules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
