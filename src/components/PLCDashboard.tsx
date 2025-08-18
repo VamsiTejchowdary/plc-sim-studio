@@ -4,6 +4,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
+import {
   Activity,
   Settings,
   Power,
@@ -13,6 +21,9 @@ import {
   Thermometer,
   Gauge,
   Zap,
+  Download,
+  FileText,
+  Database,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import AddModuleDialog from "./AddModuleDialog";
@@ -265,32 +276,57 @@ const PLCDashboard: React.FC = () => {
       const readings = [];
 
       // Generate sensor readings
-      for (const sensor of sensors) {
+      for (let i = 0; i < sensors.length; i++) {
+        const sensor = sensors[i];
+        
         // Use sensor-specific config based on min/max values
         const range = sensor.max_value - sensor.min_value;
         const midpoint = sensor.min_value + (range / 2);
+        
+        // Create unique configuration for each sensor
+        const sensorHash = sensor.id.split('-')[0]; // Use part of UUID for uniqueness
+        const sensorSeed = parseInt(sensorHash.substring(0, 8), 16) || i; // Convert to number
+        
         const config = {
           amplitude: range * 0.3, // 30% of range as amplitude
-          frequency: 0.001,
-          phase_offset: 0,
+          frequency: 0.001 + (sensorSeed % 100) * 0.00001, // Slightly different frequencies
+          phase_offset: (sensorSeed % 628) / 100, // Unique phase offset based on sensor ID
           dc_offset: midpoint // Center the wave around midpoint
         };
 
+        // Add sensor-type specific variations
+        let typeMultiplier = 1;
+        let noiseLevel = 0.2;
         let value;
+        
         switch (sensor.data_pattern) {
           case 'sine':
+            // Temperature sensors: smooth sine waves
+            typeMultiplier = 1.0;
             value = config.amplitude * Math.sin(config.frequency * currentTime + config.phase_offset) + config.dc_offset;
             break;
           case 'noise':
-            const sineBase = config.amplitude * Math.sin(config.frequency * currentTime + config.phase_offset) + config.dc_offset;
-            const noise = (Math.random() - 0.5) * config.amplitude * 0.2;
+            // Pressure sensors: sine wave with significant noise
+            typeMultiplier = 0.8;
+            noiseLevel = 0.3;
+            const sineBase = config.amplitude * typeMultiplier * Math.sin(config.frequency * currentTime + config.phase_offset) + config.dc_offset;
+            // Use sensor ID to seed random for consistent but different noise per sensor
+            const randomSeed = (sensorSeed + Math.floor(currentTime / 1000)) % 1000;
+            const pseudoRandom = (Math.sin(randomSeed * 12.9898) * 43758.5453) % 1;
+            const noise = (pseudoRandom - 0.5) * config.amplitude * noiseLevel;
             value = sineBase + noise;
             break;
           case 'square':
-            value = config.dc_offset + (Math.sin(config.frequency * currentTime + config.phase_offset) > 0 ? config.amplitude * 0.8 : -config.amplitude * 0.2);
+            // Vibration monitors: digital square waves
+            typeMultiplier = 0.9;
+            const squareWave = Math.sin(config.frequency * currentTime + config.phase_offset) > 0 ? 1 : -1;
+            value = config.dc_offset + (squareWave * config.amplitude * typeMultiplier);
             break;
           default:
-            value = sensor.min_value + Math.random() * (sensor.max_value - sensor.min_value);
+            // Random values with sensor-specific seed
+            const randomSeed2 = (sensorSeed + Math.floor(currentTime / 5000)) % 1000;
+            const pseudoRandom2 = (Math.sin(randomSeed2 * 12.9898) * 43758.5453) % 1;
+            value = sensor.min_value + pseudoRandom2 * (sensor.max_value - sensor.min_value);
         }
 
         // Clamp to min/max
@@ -298,9 +334,9 @@ const PLCDashboard: React.FC = () => {
         value = Math.max(sensor.min_value, Math.min(sensor.max_value, value));
         value = Math.round(value * 100) / 100; // Round to 2 decimal places
 
-        // Debug logging for pressure sensors
-        if (sensor.data_pattern === 'noise') {
-          console.log(`🔧 Pressure sensor debug: original=${originalValue.toFixed(2)}, clamped=${value}, range=[${sensor.min_value}-${sensor.max_value}], config=`, config);
+        // Debug logging for different sensor types
+        if (i < 3) { // Log first 3 sensors to see variety
+          console.log(`🔧 Sensor ${i} (${sensor.data_pattern}): value=${value.toFixed(2)}, seed=${sensorSeed}, phase=${config.phase_offset.toFixed(3)}, freq=${config.frequency.toFixed(6)}`);
         }
 
         readings.push({
@@ -376,6 +412,116 @@ const PLCDashboard: React.FC = () => {
       setUpdateLock(false);
     }
   }, [generateDataFallback]);
+
+  // Export functions for data download
+  const exportSensorData = useCallback(async (format: 'csv' | 'json', days: number = 7) => {
+    try {
+      console.log(`📁 Exporting sensor data in ${format} format for last ${days} days`);
+      
+      // Calculate date range
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+      
+      // Fetch sensor readings with sensor and module details
+      const { data: readings, error } = await supabase
+        .from('sensor_readings')
+        .select(`
+          id,
+          value,
+          timestamp,
+          sensors!inner (
+            id,
+            name,
+            sensor_type,
+            unit,
+            plc_modules!inner (
+              name
+            )
+          )
+        `)
+        .gte('timestamp', startDate.toISOString())
+        .lte('timestamp', endDate.toISOString())
+        .order('timestamp', { ascending: false })
+        .limit(10000); // Limit to prevent huge downloads
+
+      if (error) throw error;
+
+      if (!readings || readings.length === 0) {
+        alert('No data found for the selected date range');
+        return;
+      }
+
+      // Transform data for export
+      const exportData = readings.map(reading => ({
+        timestamp: new Date(reading.timestamp).toLocaleString(),
+        module_name: reading.sensors.plc_modules.name,
+        sensor_name: reading.sensors.name,
+        sensor_type: reading.sensors.sensor_type,
+        value: reading.value,
+        unit: reading.sensors.unit
+      }));
+
+      if (format === 'csv') {
+        downloadCSV(exportData);
+      } else {
+        downloadJSON(exportData);
+      }
+
+      console.log(`✅ Successfully exported ${readings.length} records`);
+    } catch (error) {
+      console.error('❌ Error exporting data:', error);
+      alert('Failed to export data. Please try again.');
+    }
+  }, []);
+
+  const downloadCSV = (data: any[]) => {
+    if (data.length === 0) return;
+    
+    // Create CSV headers
+    const headers = Object.keys(data[0]);
+    const csvContent = [
+      headers.join(','),
+      ...data.map(row => 
+        headers.map(header => {
+          const value = row[header];
+          // Escape values that contain commas or quotes
+          return typeof value === 'string' && (value.includes(',') || value.includes('"'))
+            ? `"${value.replace(/"/g, '""')}"`
+            : value;
+        }).join(',')
+      )
+    ].join('\n');
+
+    // Create and download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `plc_sensor_data_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const downloadJSON = (data: any[]) => {
+    const jsonContent = JSON.stringify({
+      export_date: new Date().toISOString(),
+      record_count: data.length,
+      data: data
+    }, null, 2);
+
+    const blob = new Blob([jsonContent], { type: 'application/json;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `plc_sensor_data_${new Date().toISOString().split('T')[0]}.json`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   // Update refs with current function references
   startSimulationRef.current = startSimulation;
@@ -571,8 +717,45 @@ const PLCDashboard: React.FC = () => {
               className="text-xs"
             >
               Refresh Data
-            </Button>
-            <Button
+            </Button> */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="text-xs">
+                  <Download className="h-3 w-3 mr-1" />
+                  Export Data
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuLabel>Export Format</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => exportSensorData('csv', 1)}>
+                  <FileText className="h-3 w-3 mr-2" />
+                  CSV - Last 24 hours
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => exportSensorData('csv', 7)}>
+                  <FileText className="h-3 w-3 mr-2" />
+                  CSV - Last 7 days
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => exportSensorData('csv', 30)}>
+                  <FileText className="h-3 w-3 mr-2" />
+                  CSV - Last 30 days
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => exportSensorData('json', 1)}>
+                  <Database className="h-3 w-3 mr-2" />
+                  JSON - Last 24 hours
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => exportSensorData('json', 7)}>
+                  <Database className="h-3 w-3 mr-2" />
+                  JSON - Last 7 days
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => exportSensorData('json', 30)}>
+                  <Database className="h-3 w-3 mr-2" />
+                  JSON - Last 30 days
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {/* <Button
               variant="outline"
               size="sm"
               onClick={startSimulation}

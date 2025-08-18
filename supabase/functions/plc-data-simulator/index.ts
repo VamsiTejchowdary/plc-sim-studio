@@ -25,36 +25,63 @@ const generateSensorValue = (
   minValue: number,
   maxValue: number,
   time: number,
-  patternConfig?: any
+  patternConfig?: any,
+  sensorId?: string
 ): number => {
   // Use sensor-specific config if pattern_config not provided
   const range = maxValue - minValue;
   const midpoint = minValue + (range / 2);
+  
+  // Create unique configuration for each sensor
+  const sensorHash = sensorId ? sensorId.split('-')[0] : '12345678';
+  const sensorSeed = parseInt(sensorHash.substring(0, 8), 16) || 12345;
+  
   const config = patternConfig || {
     amplitude: range * 0.3, // 30% of range as amplitude
-    frequency: 0.001,
-    phase_offset: 0,
+    frequency: 0.001 + (sensorSeed % 100) * 0.00001, // Slightly different frequencies
+    phase_offset: (sensorSeed % 628) / 100, // Unique phase offset based on sensor ID
     dc_offset: midpoint // Center the wave around midpoint
   };
 
+  // Add sensor-type specific variations
+  let typeMultiplier = 1;
+  let noiseLevel = 0.2;
+  let value;
+  
   switch (pattern) {
     case 'sine':
-      // Configurable sinusoidal: amplitude * sin(frequency * time + phase_offset) + dc_offset
-      const sineValue = config.amplitude * Math.sin(config.frequency * time + config.phase_offset) + config.dc_offset;
-      return Math.max(minValue, Math.min(maxValue, sineValue));
+      // Temperature sensors: smooth sine waves
+      typeMultiplier = 1.0;
+      value = config.amplitude * Math.sin(config.frequency * time + config.phase_offset) + config.dc_offset;
+      break;
 
     case 'noise':
-      const sineBase = config.amplitude * Math.sin(config.frequency * time + config.phase_offset) + config.dc_offset;
-      const noise = (Math.random() - 0.5) * config.amplitude * 0.2;
-      return Math.max(minValue, Math.min(maxValue, sineBase + noise));
+      // Pressure sensors: sine wave with significant noise
+      typeMultiplier = 0.8;
+      noiseLevel = 0.3;
+      const sineBase = config.amplitude * typeMultiplier * Math.sin(config.frequency * time + config.phase_offset) + config.dc_offset;
+      // Use sensor ID to seed random for consistent but different noise per sensor
+      const randomSeed = (sensorSeed + Math.floor(time / 1000)) % 1000;
+      const pseudoRandom = (Math.sin(randomSeed * 12.9898) * 43758.5453) % 1;
+      const noise = (pseudoRandom - 0.5) * config.amplitude * noiseLevel;
+      value = sineBase + noise;
+      break;
 
     case 'square':
-      const squareValue = config.dc_offset + (Math.sin(config.frequency * time + config.phase_offset) > 0 ? config.amplitude * 0.8 : -config.amplitude * 0.2);
-      return Math.max(minValue, Math.min(maxValue, squareValue));
+      // Vibration monitors: digital square waves
+      typeMultiplier = 0.9;
+      const squareWave = Math.sin(config.frequency * time + config.phase_offset) > 0 ? 1 : -1;
+      value = config.dc_offset + (squareWave * config.amplitude * typeMultiplier);
+      break;
 
     default:
-      return minValue + Math.random() * (maxValue - minValue);
+      // Random values with sensor-specific seed
+      const randomSeed2 = (sensorSeed + Math.floor(time / 5000)) % 1000;
+      const pseudoRandom2 = (Math.sin(randomSeed2 * 12.9898) * 43758.5453) % 1;
+      value = minValue + pseudoRandom2 * (maxValue - minValue);
   }
+  
+  return Math.max(minValue, Math.min(maxValue, value));
 };
 
 Deno.serve(async (req: Request) => {
@@ -112,7 +139,8 @@ Deno.serve(async (req: Request) => {
         Number(sensor.min_value),
         Number(sensor.max_value),
         currentTime,
-        sensor.pattern_config
+        sensor.pattern_config,
+        sensor.id
       );
 
       const finalValue = Math.round(value * 100) / 100; // Round to 2 decimal places
