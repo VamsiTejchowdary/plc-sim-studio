@@ -1,10 +1,15 @@
 const { Client } = require('ads-client');
 
+const PORT = Number(process.env.ADS_PORT || '48899');
+const HOST = process.env.ADS_HOST || '127.0.0.1';
+const TIMEOUT = Number(process.env.ADS_TIMEOUT || '8000');
+
 const client = new Client({
   targetAmsNetId: '192.168.1.100.1.1',
-  targetAdsPort: 48899,
-  targetHost: '127.0.0.1',
-  routerTcpPort: 48899,
+  targetAdsPort: PORT,
+  targetHost: HOST,
+  routerTcpPort: PORT,
+  timeout: TIMEOUT,
   allowHalfOpen: true,
 });
 

@@ -110,68 +110,12 @@ npm run dev
 - Implemented fallback data generation when edge function fails
 - Added retry mechanisms with exponential backoff for resilience
 
-**Bonus Features Implemented (3/4 Complete):**
-1. ✅ **Advanced Sensor Types**: 
-   - Sinusoidal (smooth sine waves)
-   - Noisy Sinusoidal (sine with random variations) 
-   - Square Wave (digital on/off patterns)
-   - 8 different sensor types supported
 
-2. ✅ **Dashboard**: 
-   - Real-time sensor value display
-   - Connection status monitoring
-   - Configuration change capabilities
-   - Data visualization with progress bars and charts
+### AdsServer:
+### Runnuing Server: 
+-- ADS_LISTEN_ADDR=127.0.0.1 ADS_PORT=49011 npm run dev:server
 
-3. ✅ **Historical Data Storage**:
-   - Complete data persistence in PostgreSQL
-   - Timestamped sensor readings
-   - **Data export functionality** - CSV and JSON formats with date range options
+### Testing Client: 
+-- ADS_LISTEN_ADDR=127.0.0.1 ADS_PORT=49011 npm run test:client
 
-4. ❌ **Docker Containerization**: *Pending*
-
-## Key Implementation Files
-
-**Configuration & Utilities:**
-- `public/plc-config.json` - Main configuration file with module templates and sensor patterns
-- `src/utils/configLoader.ts` - Configuration loading and management
-- `src/utils/moduleInitializer.ts` - Auto-initialization of modules from config
-
-**Core Components:**
-- `src/components/PLCDashboard.tsx` - Main dashboard with real-time data display
-- `src/components/AddModuleDialog.tsx` - Dynamic module creation
-- `src/components/AddSensorDialog.tsx` - Dynamic sensor creation
-- `src/components/ConfigurationDialog.tsx` - System configuration management
-
-**Backend:**
-- `supabase/functions/plc-data-simulator/index.ts` - Edge function for sensor data generation
-- `supabase/migrations/` - Database schema and initial data
-
-## Final Results
-
-**Core Requirements:** ✅ 100% Complete
-- ✅ Modular architecture with configurable N modules
-- ✅ Real-time sensor data simulation with 3 sensors per module
-- ✅ Proper naming convention (Module{X}_Sensor{Y})
-- ✅ Configurable patterns (sine, noise, square) with parameters
-- ✅ JSON configuration system
-- ✅ Real-time updates with thread-safe operations
-- ✅ Timestamp management and data persistence
-
-**Bonus Features:** ✅ 75% Complete (3/4)
-- ✅ Advanced sensor types with unique patterns per sensor
-- ✅ Comprehensive dashboard with real-time monitoring
-- ✅ Historical data storage with export functionality (CSV/JSON)
-- ❌ Docker containerization (pending)
-
-**Additional Features Implemented:**
-- Real-time Supabase subscriptions for live updates
-- Fallback data generation for resilience
-- Retry mechanisms with exponential backoff
-- Export data with multiple date ranges
-- 8 different sensor types support
-- Modern UI with progress bars and status indicators
-
-## Assessment Completion
-
-This implementation **exceeds** the core requirements of the Mock PLC Server assignment and successfully demonstrates a production-ready industrial automation monitoring system.
+### Issue: I am able to make suceesful server connection but not able to test the client connection.

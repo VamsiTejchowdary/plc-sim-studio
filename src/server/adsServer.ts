@@ -1,6 +1,28 @@
-
 const { StandAloneServer, ADS } = require('ads-server');
 const { ConfigLoader } = require('./configLoader');
+
+// Defensive: ignore known ads-server short-packet parse error so server doesn't crash
+process.on('uncaughtException', (err: any) => {
+  const isAdsShortPacket =
+    err && err.code === 'ERR_OUT_OF_RANGE' && typeof err.stack === 'string' && err.stack.includes('ads-server-core.js');
+  if (isAdsShortPacket) {
+    console.warn('Warning: Ignored short AMS/TCP packet (likely non-ADS or empty frame).');
+    return; // swallow
+  }
+  throw err; // rethrow others
+});
+
+process.on('unhandledRejection', (reason: any) => {
+  const msg = typeof reason === 'string' ? reason : reason?.message;
+  const stack = typeof reason?.stack === 'string' ? reason.stack : '';
+  const isAdsShortPacket =
+    (reason && reason.code === 'ERR_OUT_OF_RANGE') || (typeof msg === 'string' && /ERR_OUT_OF_RANGE/.test(msg));
+  if (isAdsShortPacket && stack.includes('ads-server-core.js')) {
+    console.warn('Warning: Ignored short AMS/TCP packet (unhandledRejection).');
+    return;
+  }
+  console.error('Unhandled rejection:', reason);
+});
 
 // Optional Supabase integration
 let supabase: any = null;
@@ -173,7 +195,7 @@ function updateSensorData() {
 const server = new StandAloneServer({
   localAmsNetId: '192.168.1.100.1.1',
   listeningTcpPort: 48899,
-  listeningAddress: '0.0.0.0',
+  listeningAddress: process.env.ADS_LISTEN_ADDR || '127.0.0.1',
   hideConsoleWarnings: false,
 });
 
@@ -339,7 +361,8 @@ setInterval(async () => {
 // Start the server with retry logic
 async function startServer() {
   let retries = 3;
-  const ports = [48899, 48900, 48901]; // Fallback ports
+  const envPort = process.env.ADS_PORT ? Number(process.env.ADS_PORT) : undefined;
+  const ports = envPort ? [envPort] : [48899, 48900, 48901]; // Fallback ports or env override
   let portIndex = 0;
 
   while (retries > 0 && portIndex < ports.length) {
@@ -354,7 +377,7 @@ async function startServer() {
       setInterval(updateSensorData, updateInterval);
 
       await server.listen();
-      console.log(`ADS server successfully listening on 0.0.0.0:${port}`);
+      console.log(`ADS server successfully listening on ${server.settings.listeningAddress}:${port}`);
       return;
     } catch (err) {
       console.error(`Failed to start ADS server on port ${port}:`, err);
