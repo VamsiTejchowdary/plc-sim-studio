@@ -7,7 +7,13 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dev:server": "ts-node src/server/adsServer.ts",
+    "start:server": "ts-node src/server/adsServer.ts",
+    "test:client": "node src/server/test-ads-client.js",
+    "demo": "node ads-server-demo.js",
+    "verify": "node verify-ads-implementation.js",
+    "test:what-happens": "node test-what-happens.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -40,6 +46,7 @@
     "@radix-ui/react-tooltip": "^1.2.7",
     "@supabase/supabase-js": "^2.55.0",
     "@tanstack/react-query": "^5.83.0",
+    "ads-client": "^2.1.0",
     "ads-server": "^1.1.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -76,7 +83,7 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^15.15.0",
-    "lovable-tagger": "^1.1.9",
+
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
     "ts-node": "^10.9.2",
